@@ -1,0 +1,8 @@
+.*
+*.log
+*.o
+!.devcontainer
+!.gitignore
+!.gitkeep
+!.venv
+!.vscode

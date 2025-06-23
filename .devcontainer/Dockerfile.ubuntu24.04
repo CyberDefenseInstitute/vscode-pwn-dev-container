@@ -1,0 +1,135 @@
+# syntax=docker/dockerfile:1
+FROM docker.io/ubuntu:24.04
+
+ARG PWNDBG_DIR=/opt/pwndbg
+ARG PWNDBG_TAG=2025.05.30
+ARG PYTHON3_VERSION=3.13.5
+ARG RR_VERSION=5.9.0
+ARG APT_SRC_LOCATION=/usr/src
+ARG TZDATA_AREA=Asia
+ARG TZDATA_ZONE=Tokyo
+ARG USERNAME=player
+
+SHELL [ "/bin/bash", "-c" ]
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN <<EOT
+set -Eeuxo pipefail
+
+## Set timezone and locale
+apt-get update -y
+echo "tzdata tzdata/Areas select ${TZDATA_AREA}" | debconf-set-selections
+echo "tzdata tzdata/Zones/${TZDATA_AREA} select ${TZDATA_ZONE}" | debconf-set-selections
+apt-get install -y --no-install-recommends locales tzdata
+sed -i -E '/en_US.UTF-8/s/^# //g' /etc/locale.gen
+locale-gen
+
+## Add a user
+apt-get install -y --no-install-recommends sudo
+groupmod -n "${USERNAME}" ubuntu
+usermod -c '' -d "/home/${USERNAME}" -l "${USERNAME}" -m ubuntu
+echo "${USERNAME} ALL=(root) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}"
+
+## Enable deb-src of repositories
+### ref: https://zenn.dev/mtkn1/articles/ubuntu-noble-repository-source
+apt-get install -y --no-install-recommends apt-src python3-software-properties
+python3 -c "from softwareproperties.SoftwareProperties import SoftwareProperties; SoftwareProperties(deb822=True).enable_source_code_sources()"
+
+## Enable debug symbol packages
+apt-get install -y --no-install-recommends lsb-release ubuntu-dbgsym-keyring
+cat <<EOF >>/etc/apt/sources.list.d/ubuntu.sources
+
+Types: deb
+URIs: http://ddebs.ubuntu.com/
+Suites: $(lsb_release -cs) $(lsb_release -cs)-updates $(lsb_release -cs)-proposed
+Components: main universe restricted multiverse
+Signed-By: /usr/share/keyrings/ubuntu-dbgsym-keyring.gpg
+EOF
+apt-get update
+
+## Install apt-file
+apt-get install -y --no-install-recommends apt-file
+apt-file update
+
+## Install base tools
+apt-get install -y --no-install-recommends \
+    curl \
+    file \
+    git \
+    iproute2 \
+    less \
+    procps \
+    wget
+
+git clone --depth 1 --branch "${PWNDBG_TAG}" https://github.com/pwndbg/pwndbg.git "${PWNDBG_DIR}"
+(cd "${PWNDBG_DIR}"; ./setup.sh)
+chown -R ":${USERNAME}" "${PWNDBG_DIR}"
+chmod -R g+w "${PWNDBG_DIR}"
+
+## Install rr
+wget -P /tmp "https://github.com/rr-debugger/rr/releases/download/${RR_VERSION}/rr-${RR_VERSION}-Linux-x86_64.deb"
+apt-get install -y "/tmp/rr-${RR_VERSION}-Linux-x86_64.deb"
+rm -f "/tmp/rr-${RR_VERSION}-Linux-x86_64.deb"
+EOT
+
+COPY <<EOF /root/.apt-src/config
+APT::Src::Location "${APT_SRC_LOCATION}";
+EOF
+
+RUN <<EOT
+set -Eeuxo pipefail
+
+## Install utilities
+apt-get update
+apt-get install -y --no-install-recommends \
+    bind9-dnsutils \
+    clang \
+    clangd \
+    gdb \
+    gdbserver \
+    iputils-ping \
+    ncat \
+    neovim \
+    socat \
+    tmux
+
+## Cleanup caches
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+EOT
+
+ENV DEBIAN_FRONTEND="dialog" \
+    DEBUGINFOD_URLS="https://debuginfod.ubuntu.com" \
+    LANG="en_US.UTF-8" \
+    LANGUAGE="en_US.UTF-8" \
+    LC_ALL="en_US.UTF-8" \
+    PYTHONIOENCODING="UTF-8" \
+    APT_SRC_LOCATION="${APT_SRC_LOCATION}"
+
+USER "${USERNAME}"
+WORKDIR "/home/${USERNAME}"
+ENV USER="${USERNAME}"
+
+COPY --chown="${USERNAME}:${USERNAME}" <<EOF /home/${USERNAME}/.config/gdb/gdbinit
+source ${PWNDBG_DIR}/gdbinit.py
+set debuginfod enabled on
+set print asm-demangle on
+EOF
+
+ADD --chown="${USERNAME}:${USERNAME}" https://astral.sh/uv/install.sh uv-installer.sh
+RUN <<EOT
+set -Eeuxo pipefail
+
+# Install uv and the latest version of Python
+sh uv-installer.sh
+rm -f uv-installer.sh
+export PATH="${HOME}/.local/bin/:${PATH}"
+source "${HOME}/.local/bin/env"
+uv python install "${PYTHON3_VERSION}"
+
+# Suppress bash warning message
+touch ~/.sudo_as_admin_successful
+EOT
+
+CMD [ "/bin/sh", "-c", "while sleep 1000; do :; done" ]

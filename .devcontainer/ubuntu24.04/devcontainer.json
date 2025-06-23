@@ -1,0 +1,67 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
+{
+	"name": "Pwn Dev Container (ubuntu24.04)",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"build": {
+		"dockerfile": "../Dockerfile.ubuntu24.04"
+	},
+	"capAdd": [
+		"SYS_PTRACE",
+		"SYS_ADMIN"
+	],
+	"securityOpt": [ "seccomp=unconfined" ],
+	"runArgs": [
+		"--hostname=noble",
+		"--name=pwn-dev-container-ubuntu24.04"
+	],
+	"workspaceFolder": "/workspace",
+	"workspaceMount": "source=${localWorkspaceFolder}/workspace,target=${containerWorkspaceFolder},type=bind,consistency=cached",
+
+	// Features to add to the dev container. More info: https://containers.dev/features.
+	// "features": {},
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+
+	// Use 'postCreateCommand' to run commands after the container is created.
+	// "postCreateCommand": "uname -a",
+
+	// Configure tool-specific properties.
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"llvm-vs-code-extensions.vscode-clangd"
+			],
+			"settings": {}
+		}
+	},
+
+	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+	// "remoteUser": "root"
+	"containerEnv": {
+		"VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv"
+	},
+	"mounts": [
+		{"source":"pwn-dev-container-ubuntu24.04-src", "target": "/usr/src", "type": "volume"},
+		{"source":"pwn-dev-container-ubuntu24.04-venv", "target": "${containerWorkspaceFolder}/.venv", "type":"volume"},
+		{"source":"${localWorkspaceFolder}/.devcontainer/ubuntu24.04/scripts", "target": "/scripts", "type":"bind"}
+	],
+	"onCreateCommand": {
+		"fix permission": "/scripts/fix_permission.sh",
+		"install virtual env": "/scripts/install_virtual_env.sh",
+		"install bash functions": "/scripts/install_bash_functions.sh"
+	},
+	"updateContentCommand": {
+		"install python packages": "/scripts/install_python_packages.sh",
+		"install libc6 source": "/scripts/install_libc6_source.sh"
+	},
+	"postCreateCommand": {
+		"install libstdc++6 source": "/scripts/install_libstdcxx6_source.sh"
+	},
+	"postStartCommand": {
+		"upgrade python packages": "/scripts/upgrade_python_packages.sh"
+	},
+	"waitFor": "updateContentCommand"
+}

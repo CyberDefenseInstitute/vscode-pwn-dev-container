@@ -1,0 +1,5 @@
+ROPGadget
+ipython
+pwntools
+ropper
+z3-solver
